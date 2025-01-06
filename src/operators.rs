@@ -1,3 +1,6 @@
+use core::num;
+use std::str::RMatches;
+
 use crate::tensor::Tensor;
 
 // get (row) vectors from a 2D table given a list of indices
@@ -71,7 +74,21 @@ pub fn masked_softmax(y: &mut Tensor<f32>) {
 }
 
 pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: f32) {
-    todo!("实现 rms_norm，计算前做一些必要的检查会帮助你后续调试")
+    assert_eq!(y.size(), x.size());
+    let dim = x.shape().last().unwrap();
+    let batch = x.size() / dim;
+    assert_eq!(w.size(), *dim);
+
+    let y_data = unsafe { y.data_mut() };
+    let x_data = x.data();
+    let w_data = w.data();
+
+    for i in 0..*dim {
+        let offset = i * batch;
+        let rms_i = (x_data[offset..offset + batch].iter().map(|&x_ij| x_ij * x_ij).sum::<f32>() / batch as f32 + epsilon).sqrt();
+        y_data[offset..offset + batch].iter_mut().zip(&x_data[offset..offset + batch]).zip(w_data)
+            .for_each(|((y_j, &x_j), &w_j)| *y_j = x_j * w_j / rms_i);
+    }
 }
 
 // y = silu(x) * y
