@@ -86,9 +86,9 @@ pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: 
     for i in 0..*dim {
         let x_slice = x.slice(i * batch, &vec![batch]);
         let mut y_slice = y.slice(i * batch, &vec![batch]);
-
         let sum_squares = x_slice.data().iter().map(|&x_ij| x_ij * x_ij).sum::<f32>();
         let rms_i = (sum_squares / batch_f32 + epsilon).sqrt();
+
         unsafe {
             y_slice.data_mut()
                 .iter_mut()
@@ -114,20 +114,21 @@ pub fn swiglu(y: &mut Tensor<f32>, x: &Tensor<f32>) {
 // hint: You don't need to do an explicit transpose of B
 pub fn matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor<f32>, alpha: f32) {
     let m = a.shape()[0];
-    let n = a.shape()[1];
-    let k = b.shape()[0];
+    let k = a.shape()[1];
+    let n = b.shape()[0];
 
-    assert_eq!(c.shape(), &[m, k]);
+    assert_eq!(c.shape(), &[m, n]);
+    assert_eq!(b.shape()[1], k);
 
     let c_data = unsafe { c.data_mut() };
     c_data.iter_mut().for_each(|x| *x *= beta);
 
     for i in 0..m {
-        let a_slice = a.slice(i * n, &vec![n]);
-        for j in 0..k {
-            let b_slice = b.slice(j * n, &vec![n]);
+        let a_slice = a.slice(i * k, &vec![k]);
+        for j in 0..n {
+            let b_slice = b.slice(j * k, &vec![k]);
             let sum = dot(&a_slice, &b_slice);
-            c_data[i * k + j] += alpha * sum;
+            c_data[i * n + j] += alpha * sum;
         }
     }
 }
