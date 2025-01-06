@@ -79,16 +79,23 @@ pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: 
     let batch = x.size() / dim;
     assert_eq!(w.size(), *dim);
 
-    let y_data = unsafe { y.data_mut() };
-    let x_data = x.data();
     let w_data = w.data();
 
     let batch_f32 = batch as f32;
 
-    for (x_chunk, y_chunk) in x_data.chunks(batch).zip(y_data.chunks_mut(batch)) {
-        let rms_i = (x_chunk.iter().map(|&x_ij| x_ij * x_ij).sum::<f32>() / batch_f32 + epsilon).sqrt();
-        y_chunk.iter_mut().zip(x_chunk).zip(w_data)
-            .for_each(|((y_j, &x_j), &w_j)| *y_j = x_j * w_j / rms_i);
+    for i in 0..*dim {
+        let x_slice = x.slice(i * batch, &vec![batch]);
+        let mut y_slice = y.slice(i * batch, &vec![batch]);
+
+        let sum_squares = x_slice.data().iter().map(|&x_ij| x_ij * x_ij).sum::<f32>();
+        let rms_i = (sum_squares / batch_f32 + epsilon).sqrt();
+        unsafe {
+            y_slice.data_mut()
+                .iter_mut()
+                .zip(x_slice.data())
+                .zip(w_data)
+                .for_each(|((y_j, &x_j), &w_j)| *y_j = x_j * w_j / rms_i);
+        }
     }
 }
 
@@ -97,22 +104,32 @@ pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: 
 pub fn swiglu(y: &mut Tensor<f32>, x: &Tensor<f32>) {
     assert_eq!(y.size(), x.size());
 
-    let y = unsafe { y.data_mut() };
-    let x = x.data();
+    let y_data = unsafe { y.data_mut() };
+    let x_data = x.data();
     
-    y.iter_mut().zip(x).for_each(|(y_i, &x_i)| *y_i *= x_i / (1. + (-x_i).exp()));
+    y_data.iter_mut().zip(x_data).for_each(|(y_i, &x_i)| *y_i *= x_i / (1. + (-x_i).exp()));
 }
 
 // C = beta * C + alpha * A @ B^T
 // hint: You don't need to do an explicit transpose of B
 pub fn matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor<f32>, alpha: f32) {
-    // todo!("实现 matmul_transb，计算前做一些必要的检查会帮助你后续调试");
-    let a = a.data();
-    let b = b.data();
-    let c = unsafe { c.data_mut()};
-    c.iter_mut().for_each(|c_i| *c_i *= beta);
+    let m = a.shape()[0];
+    let n = a.shape()[1];
+    let k = b.shape()[0];
 
-    
+    assert_eq!(c.shape(), &[m, k]);
+
+    let c_data = unsafe { c.data_mut() };
+    c_data.iter_mut().for_each(|x| *x *= beta);
+
+    for i in 0..m {
+        let a_slice = a.slice(i * n, &vec![n]);
+        for j in 0..k {
+            let b_slice = b.slice(j * n, &vec![n]);
+            let sum = dot(&a_slice, &b_slice);
+            c_data[i * k + j] += alpha * sum;
+        }
+    }
 }
 
 // Dot product of two tensors (treated as vectors)
