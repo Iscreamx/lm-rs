@@ -83,10 +83,11 @@ pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: 
     let x_data = x.data();
     let w_data = w.data();
 
-    for i in 0..*dim {
-        let offset = i * batch;
-        let rms_i = (x_data[offset..offset + batch].iter().map(|&x_ij| x_ij * x_ij).sum::<f32>() / batch as f32 + epsilon).sqrt();
-        y_data[offset..offset + batch].iter_mut().zip(&x_data[offset..offset + batch]).zip(w_data)
+    let batch_f32 = batch as f32;
+
+    for (x_chunk, y_chunk) in x_data.chunks(batch).zip(y_data.chunks_mut(batch)) {
+        let rms_i = (x_chunk.iter().map(|&x_ij| x_ij * x_ij).sum::<f32>() / batch_f32 + epsilon).sqrt();
+        y_chunk.iter_mut().zip(x_chunk).zip(w_data)
             .for_each(|((y_j, &x_j), &w_j)| *y_j = x_j * w_j / rms_i);
     }
 }
@@ -105,7 +106,13 @@ pub fn swiglu(y: &mut Tensor<f32>, x: &Tensor<f32>) {
 // C = beta * C + alpha * A @ B^T
 // hint: You don't need to do an explicit transpose of B
 pub fn matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor<f32>, alpha: f32) {
-    todo!("实现 matmul_transb，计算前做一些必要的检查会帮助你后续调试");
+    // todo!("实现 matmul_transb，计算前做一些必要的检查会帮助你后续调试");
+    let a = a.data();
+    let b = b.data();
+    let c = unsafe { c.data_mut()};
+    c.iter_mut().for_each(|c_i| *c_i *= beta);
+
+    
 }
 
 // Dot product of two tensors (treated as vectors)
