@@ -75,17 +75,17 @@ pub fn masked_softmax(y: &mut Tensor<f32>) {
 
 pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: f32) {
     assert_eq!(y.size(), x.size());
-    let dim = x.shape().last().unwrap();
-    let batch = x.size() / dim;
-    assert_eq!(w.size(), *dim);
+    let batch = x.shape().last().unwrap();
+    let dim = x.size() / batch;
+    assert_eq!(w.size(), *batch);
 
     let w_data = w.data();
 
-    let batch_f32 = batch as f32;
+    let batch_f32 = *batch as f32;
 
-    for i in 0..*dim {
-        let x_slice = x.slice(i * batch, &vec![batch]);
-        let mut y_slice = y.slice(i * batch, &vec![batch]);
+    for i in 0..dim {
+        let x_slice = x.slice(i * batch, &vec![*batch]);
+        let mut y_slice = y.slice(i * batch, &vec![*batch]);
         let sum_squares = x_slice.data().iter().map(|&x_ij| x_ij * x_ij).sum::<f32>();
         let rms_i = (sum_squares / batch_f32 + epsilon).sqrt();
 
