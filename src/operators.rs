@@ -117,7 +117,7 @@ pub fn matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor
     let k = a.shape()[1];
     let n = b.shape()[0];
 
-    assert_eq!(c.shape(), &[m, n]);
+    assert_eq!(c.size(), m * n);
     assert_eq!(b.shape()[1], k);
 
     let c_data = unsafe { c.data_mut() };
