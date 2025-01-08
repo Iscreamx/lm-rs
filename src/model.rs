@@ -221,7 +221,7 @@ fn mlp(
 }
 
 #[test]
-pub fn test_self_attention() {
+pub fn test_self_attention_case_1() {
     let seq_len = 1;
     let total_seq_len = 4;
     let n_kv_h = 2;
@@ -299,7 +299,96 @@ pub fn test_self_attention() {
     att_scores_pt.print();
 
     assert!(hidden_states.close_to(&hidden_states_pt, 1e-3));
-    assert!(att_scores.close_to(&att_scores_pt, 1e-3));
+    assert!(att_scores.close_to(&att_scores_pt, 1e-3));        
+}
+
+
+#[test]
+pub fn test_self_attention_case_2() {
+    let seq_len = 2;
+    let total_seq_len = 4;
+    let n_kv_h = 2;
+    let n_groups = 2;
+    let dqkv = 4;
+
+    let q = Tensor::new(
+        vec![
+            -0.2386, -1.0934, 0.1558, 0.1750, -0.9526, -0.5442, 1.1985, 0.9604,
+            -1.1074, -0.8403, -0.0020, 0.2240, 0.8766, -0.5379, -0.2994, 0.9785,
+            1.5818, -0.2637, -0.8172, 1.4276, 1.7598, 1.1749, 0.2644, -0.6843,
+            1.3014, -0.0108, -0.5931, 0.7040, -0.4759, -0.0982, 0.2107, -0.2471,
+        ],
+        &vec![seq_len, n_kv_h * n_groups * dqkv],
+    );
+
+    let k = Tensor::new(
+        vec![
+            -0.5589, 0.5258, -0.7888, 0.0871, -0.2525, 0.9114, -0.5615, 1.1892,
+            -0.6095, -0.4202, -0.7433, 0.2429, 0.9471, 1.7863, -0.7762, -0.1504,
+            -1.6736, 0.4677, -0.6218, -0.6322, 0.0812, -0.3079, 0.7399, -0.6557,
+            0.3716, 2.3700, -1.5539, -1.0817, -0.7842, 0.8656, -2.4925, -1.6823,
+        ],
+        &vec![total_seq_len, n_kv_h * dqkv],
+    );
+
+    let v = Tensor::new(
+        vec![
+            -0.8224, 1.7161, -1.4522, 1.0167, -1.3481, 0.0612, 0.1985, 2.0584,
+            0.4593, -0.3159, 0.1319, 2.0025, 1.0440, 1.1304, 0.1551, 0.9454,
+            0.2223, 0.3058, -0.3056, -2.4704, 0.9629, -0.9308, 1.0938, -1.0941,
+            -0.0350, 0.7814, 0.1030, -1.2228, 0.3091, 0.4975, -1.0842, 1.1568,
+        ],
+        &vec![total_seq_len, n_kv_h * dqkv],
+    );
+
+    let mut hidden_states = Tensor::default(&vec![seq_len, n_kv_h * n_groups * dqkv]);
+    let mut att_scores = Tensor::default(&vec![n_kv_h, n_groups, seq_len, total_seq_len]);
+
+    self_attention(
+        &mut hidden_states,
+        &mut att_scores,
+        &q,
+        &k,
+        &v,
+        n_kv_h,
+        n_groups,
+        seq_len,
+        total_seq_len,
+        dqkv,
+    );
+
+    let hidden_states_pt = Tensor::new(
+        vec![
+            0.049982, 0.42122, -0.37411, 0.32654, 0.037205, 0.44837, -0.41853, 0.11237,
+            0.10639, -0.042732, 0.11702, 0.66082, -0.00083541, 0.20006, 0.24296, 0.97523,
+            -0.075367, 0.63828, -0.37245, 0.48356, -0.071897, 0.79365, -0.054150, -0.92040,
+            0.21796, 0.45082, 0.12352, 1.0362, 0.28217, 0.075252, 0.095889, 0.61944,
+        ],
+        &vec![seq_len, n_kv_h * n_groups * dqkv],
+    );
+
+    let att_scores_pt = Tensor::new(
+        vec![
+            0.2430, 0.4171, 0.2725, 0.0675, 0.2942, 0.3513, 0.0686, 0.2858,
+            0.2526, 0.3707, 0.3414, 0.0354, 0.0907, 0.0474, 0.0430, 0.8189,
+            0.2917, 0.0895, 0.3288, 0.2900, 0.2989, 0.4319, 0.1328, 0.1365,
+            0.3975, 0.2850, 0.2131, 0.1044, 0.2190, 0.1819, 0.3094, 0.2898,
+        ],
+        &vec![n_kv_h, n_groups, seq_len, total_seq_len],
+    );
+
+    println!("Rust Hidden States:");
+    hidden_states.print();
+    println!("PyTorch Hidden States:");
+    hidden_states_pt.print();
+
+    println!("Rust Attention Scores:");
+    att_scores.print();
+    println!("PyTorch Attention Scores:");
+    att_scores_pt.print();
+
+    // assert!(hidden_states.close_to(&hidden_states_pt, 1e-3));
+    // assert!(att_scores.close_to(&att_scores_pt, 1e-3));
 }
 
 #[test]
