@@ -3,7 +3,7 @@ use std::vec;
 
 use crate::config::LlamaConfigJson;
 use crate::kvcache::KVCache;
-use crate::operators::{self as OP, masked_softmax, matmul_transb, rms_norm, swiglu};
+use crate::operators::{self as OP, masked_softmax, matmul_transb, rms_norm, swiglu, matmul};
 use crate::params::LLamaParams;
 use crate::tensor::Tensor;
 use safetensors::SafeTensors;
