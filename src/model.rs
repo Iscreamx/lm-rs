@@ -153,25 +153,23 @@ fn self_attention(
     total_seq_len: usize,
     dqkv: usize,
 ) {
-    // todo!("Implement self_attention");
-    for i in 0..n_kv_h {
-        let k_batch = k.slice(i * total_seq_len * dqkv, &vec![total_seq_len, dqkv]);
-        for j in 0..n_groups {
-            let q_batch = q.slice(i * j * seq_len * dqkv, &vec![seq_len, dqkv]);
-            let mut att_scores_slice = att_scores.slice(i * j * seq_len * total_seq_len, &vec![seq_len, total_seq_len]);
-            matmul_transb(&mut att_scores_slice, 0., &q_batch, &k_batch, 1.);
-        }
+    // score = Q @ K.T / sqrt(dim)
+    let batch = n_kv_h * n_groups;
+    for i in 0..batch {
+        let q_batch = q.slice(i * batch * dqkv * seq_len, &vec![seq_len, dqkv]);
+        let k_batch = k.slice(i * dqkv * seq_len / n_groups, &vec![total_seq_len, dqkv]);
+        let mut att_scores_batch = att_scores.slice(i * batch * seq_len * total_seq_len, &vec![seq_len, total_seq_len]);
+        matmul_transb(&mut att_scores_batch, 0., &q_batch, &k_batch, 1. / (dqkv as f32).sqrt());
     }
 
     masked_softmax(att_scores);
 
-    for i in 0..n_kv_h {
-        let v_batch = v.slice(i * total_seq_len * dqkv, &vec![dqkv, total_seq_len]);
-        for j in 0..n_groups {
-            let att_scores_slice = att_scores.slice(i * j * seq_len * total_seq_len, &vec![seq_len, total_seq_len]);
-            let mut hidden_states_slice = hidden_states.slice(i * j * seq_len * dqkv, &vec![seq_len, dqkv]);
-            matmul_transb(&mut hidden_states_slice, 0., &att_scores_slice, &v_batch, 1.);
-        }
+    // attn_V = attn @ V
+    for i in 0..batch {
+        let att_scores_batch = att_scores.slice(i * batch * seq_len * total_seq_len, &vec![seq_len, total_seq_len]);
+        let v_batch = v.slice(i * dqkv * total_seq_len / n_groups, &vec![total_seq_len, dqkv]);
+        let mut hidden_states_batch = hidden_states.slice(i * batch * seq_len * dqkv, &vec![seq_len, dqkv]);
+        matmul(&mut hidden_states_batch, 0., &att_scores_batch, &v_batch, 1.);
     }
 }
 
