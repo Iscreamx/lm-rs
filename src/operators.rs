@@ -134,6 +134,33 @@ pub fn matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor
     }
 }
 
+// C = beta * C + alpha * A @ B
+pub fn matmul(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor<f32>, alpha: f32) {
+    let m = a.shape()[0];
+    let k = a.shape()[1];
+    let n = b.shape()[0];
+
+    assert_eq!(c.size(), m * n);
+    assert_eq!(b.shape()[1], k);
+
+    let c_data = unsafe { c.data_mut() };
+    let b_data = b.data();
+
+    c_data.iter_mut().for_each(|x| *x *= beta);
+
+    for i in 0..m {
+        let a_slice = a.slice(i * k, &vec![1, k]);
+        let a_data = a_slice.data();
+        for j in 0..n {
+            let mut sum = 0.0;
+            for p in 0..k {
+                sum += a_data[p] * b_data[p * n + j];
+            }
+            c_data[i * n + j] += alpha * sum;
+        }
+    }
+}
+
 // Dot product of two tensors (treated as vectors)
 #[allow(unused)]
 pub fn dot(x: &Tensor<f32>, y: &Tensor<f32>) -> f32 {
