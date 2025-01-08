@@ -181,7 +181,7 @@ fn self_attention(
                         v.data()[i / n_groups * dqkv + c * dqkv * n_kv_h + b];
                 }
                 unsafe {
-                    hidden_states.data_mut()[i * dqkv * seq_len + a * batch * dqkv + b] = attn_v;
+                    hidden_states.data_mut()[i * dqkv * seq_len + a * dqkv + b] = attn_v;
                 }
             }
         }
