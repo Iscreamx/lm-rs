@@ -3,7 +3,7 @@ use std::vec;
 
 use crate::config::LlamaConfigJson;
 use crate::kvcache::KVCache;
-use crate::operators::{self as OP, masked_softmax, matmul_transb, rms_norm, swiglu, matmul};
+use crate::operators::{self as OP, masked_softmax, matmul_transb, rms_norm, swiglu};
 use crate::params::LLamaParams;
 use crate::tensor::Tensor;
 use safetensors::SafeTensors;
@@ -156,20 +156,35 @@ fn self_attention(
     // score = Q @ K.T / sqrt(dim)
     let batch = n_kv_h * n_groups;
     for i in 0..batch {
-        let q_batch = q.slice(i * batch * dqkv * seq_len, &vec![seq_len, dqkv]);
-        let k_batch = k.slice(i * dqkv * seq_len / n_groups, &vec![total_seq_len, dqkv]);
-        let mut att_scores_batch = att_scores.slice(i * batch * seq_len * total_seq_len, &vec![seq_len, total_seq_len]);
-        matmul_transb(&mut att_scores_batch, 0., &q_batch, &k_batch, 1. / (dqkv as f32).sqrt());
+        for a in 0..seq_len {
+            for b in 0..total_seq_len {
+                let mut score = 0.0;
+                for c in 0..dqkv {
+                    score += q.data()[i * dqkv + a * dqkv * n_groups * n_kv_h + c] * k.data()[i / n_groups * dqkv + b * dqkv * n_kv_h + c];
+                }
+                unsafe {
+                    att_scores.data_mut()[i * seq_len * total_seq_len + a * total_seq_len + b] = score / (dqkv as f32).sqrt();
+                }
+            } 
+        }
     }
 
     masked_softmax(att_scores);
 
     // attn_V = attn @ V
     for i in 0..batch {
-        let att_scores_batch = att_scores.slice(i * batch * seq_len * total_seq_len, &vec![seq_len, total_seq_len]);
-        let v_batch = v.slice(i * dqkv * total_seq_len / n_groups, &vec![total_seq_len, dqkv]);
-        let mut hidden_states_batch = hidden_states.slice(i * batch * seq_len * dqkv, &vec![seq_len, dqkv]);
-        matmul(&mut hidden_states_batch, 0., &att_scores_batch, &v_batch, 1.);
+        for a in 0..seq_len {
+            for b in 0..dqkv {
+                let mut attn_v = 0.0;
+                for c in 0..total_seq_len {
+                    attn_v += att_scores.data()[i * seq_len * total_seq_len + a * total_seq_len + c] * 
+                        v.data()[i / n_groups * dqkv + c * dqkv * n_kv_h + b];
+                }
+                unsafe {
+                    hidden_states.data_mut()[i * dqkv * seq_len + a * batch * dqkv + b] = attn_v;
+                }
+            }
+        }
     }
 }
 
@@ -203,6 +218,88 @@ fn mlp(
             .for_each(|(r, &h)| *r += h);
     }
     // residual.print();
+}
+
+#[test]
+pub fn test_self_attention() {
+    let seq_len = 1;
+    let total_seq_len = 4;
+    let n_kv_h = 2;
+    let n_groups = 2;
+    let dqkv = 4;
+
+    let q = Tensor::new(
+        vec![
+            -0.2386, -1.0934, 0.1558, 0.1750, -0.9526, -0.5442, 1.1985, 0.9604,
+            -1.1074, -0.8403, -0.0020, 0.2240, 0.8766, -0.5379, -0.2994, 0.9785,
+        ],
+        &vec![seq_len, n_kv_h * n_groups * dqkv],
+    );
+
+    let k = Tensor::new(
+        vec![
+            1.5818, -0.2637, -0.8172, 1.4276, 1.7598, 1.1749, 0.2644, -0.6843,
+            1.3014, -0.0108, -0.5931, 0.7040, -0.4759, -0.0982, 0.2107, -0.2471,
+            -0.5589, 0.5258, -0.7888, 0.0871, -0.2525, 0.9114, -0.5615, 1.1892,
+            -0.6095, -0.4202, -0.7433, 0.2429, 0.9471, 1.7863, -0.7762, -0.1504,
+        ],
+        &vec![total_seq_len, n_kv_h * dqkv],
+    );
+
+    let v = Tensor::new(
+        vec![
+            -1.6736, 0.4677, -0.6218, -0.6322, 0.0812, -0.3079, 0.7399, -0.6557,
+            0.3716, 2.3700, -1.5539, -1.0817, -0.7842, 0.8656, -2.4925, -1.6823,
+            -0.8224, 1.7161, -1.4522, 1.0167, -1.3481, 0.0612, 0.1985, 2.0584,
+            0.4593, -0.3159, 0.1319, 2.0025, 1.0440, 1.1304, 0.1551, 0.9454,
+        ],
+        &vec![total_seq_len, n_kv_h * dqkv],
+    );
+
+    let mut hidden_states = Tensor::default(&vec![seq_len, n_kv_h * n_groups * dqkv]);
+    let mut att_scores = Tensor::default(&vec![n_kv_h, n_groups, seq_len, total_seq_len]);
+
+    self_attention(
+        &mut hidden_states,
+        &mut att_scores,
+        &q,
+        &k,
+        &v,
+        n_kv_h,
+        n_groups,
+        seq_len,
+        total_seq_len,
+        dqkv,
+    );
+
+    let hidden_states_pt = Tensor::new(
+        vec![
+            -0.3546, 0.8697, -0.7388, 0.4540, -0.3181, 0.8330, -0.7203, 0.6573,
+            -0.7169, 0.5333, -1.0760, -0.0938, -0.3117, 0.3560, -0.1350, 0.4386,
+        ],
+        &vec![seq_len, n_kv_h * n_groups * dqkv],
+    );
+
+    let att_scores_pt = Tensor::new(
+        vec![
+            0.2571, 0.2211, 0.1921, 0.3298, 0.2079, 0.1792, 0.2484, 0.3645,
+            0.0789, 0.4878, 0.3315, 0.1017, 0.2618, 0.1728, 0.3293, 0.2361,
+        ],
+        &vec![n_kv_h, n_groups, seq_len, total_seq_len],
+    );
+
+    println!("Rust Hidden States:");
+    hidden_states.print();
+    println!("PyTorch Hidden States:");
+    hidden_states_pt.print();
+
+    println!("Rust Attention Scores:");
+    att_scores.print();
+    println!("PyTorch Attention Scores:");
+    att_scores_pt.print();
+
+    assert!(hidden_states.close_to(&hidden_states_pt, 1e-3));
+    assert!(att_scores.close_to(&att_scores_pt, 1e-3));
 }
 
 #[test]
